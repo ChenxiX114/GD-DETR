@@ -1,0 +1,2 @@
+# Paper-aligned candidate; final experiment provenance still needs verification.
+__include__: ['./gddetr/gddetr_r50_oralxrays9.yml']

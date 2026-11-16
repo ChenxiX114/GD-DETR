@@ -1,0 +1,34 @@
+task: detection
+
+num_classes: 9
+remap_mscoco_category: False
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: ./dataset/OralXrays9/images/train
+    ann_file: ./dataset/OralXrays9/annotations/instances_train.json
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: True
+  batch_size: 4
+  num_workers: 12
+  drop_last: True
+
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: ./dataset/OralXrays9/images/val
+    ann_file: ./dataset/OralXrays9/annotations/instances_val.json
+    transforms:
+      type: Compose
+      ops: ~
+
+  shuffle: False
+  batch_size: 4
+  num_workers: 4
+  drop_last: False

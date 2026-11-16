@@ -1,0 +1,141 @@
+# OralXrays9 (train 10,000 / val 2,449): R50 Scale-M GDDETR.
+# Retains the R18 AnatomyDensityGraph protocol and scales the backbone,
+# feature width, encoder expansion, and decoder depth.
+
+__include__: [
+  '../dataset/oralxrays9_detection.yml',
+  '../runtime.yml',
+  './include/dataloader.yml',
+  './include/optimizer.yml',
+  './include/gddetr_r50vd.yml',
+]
+
+output_dir: ./output/gddetr_r50_oralxrays9
+
+model: GraphRTDETR
+criterion: GraphCriterion
+
+PResNet:
+  depth: 50
+  return_idx: [0, 1, 2, 3]
+  freeze_at: -1
+  freeze_norm: False
+  pretrained: False
+
+GraphRTDETR:
+  backbone: PResNet
+  encoder: AnatomyDensityHybridEncoder
+  decoder: RTDETRTransformer
+  multi_scale: [480, 512, 544, 576, 608, 640, 640, 640, 672, 704, 736, 768, 800]
+
+AnatomyDensityHybridEncoder:
+  in_channels: [256, 512, 1024, 2048]
+  feat_strides: [4, 8, 16, 32]
+  hidden_dim: 320
+  nhead: 8
+  dim_feedforward: 1280
+  expansion: 0.75
+  use_encoder_idx: [3]
+  num_encoder_layers: 1
+  eval_spatial_size: [640, 640]
+  graph_enabled: True
+  graph_patch_size: 4
+  graph_mask_eps: 0.1
+  graph_cross_scale: True
+  graph_cross_tooth_w: 0.5
+  graph_density_w: 1.0
+  graph_density_recall_penalty: 0.3
+  graph_density_sigma_ratio: 1.2
+  # Select the pre-message-passing node loss and density regression described in the paper.
+  graph_aux_loss_mode: legacy
+  graph_ramp_epochs: 30
+
+RTDETRTransformer:
+  feat_channels: [320, 320, 320, 320]
+  feat_strides: [4, 8, 16, 32]
+  hidden_dim: 320
+  num_levels: 4
+  dim_feedforward: 1280
+  num_decoder_layers: 4
+  num_denoising: 100
+  eval_idx: -1
+  eval_spatial_size: [640, 640]
+
+GraphCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2}
+  losses: ['vfl', 'boxes']
+  alpha: 0.75
+  gamma: 2.0
+  graph_lesion_weight: 3.0
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0
+
+train_dataloader:
+  num_workers: 4
+  dataset:
+    type: OralXrays9Idmap
+    img_folder: ./dataset/OralXrays9/images/train
+    ann_file: ./dataset/OralXrays9/annotations/instances_train.json
+    return_tooth_mask: True
+    tooth_masks_path: './data/tooth_priors/tooth_masks_train.npy'
+    return_tooth_boxes_t: True
+    tooth_boxes_path: './data/tooth_priors/tooth_boxes_train.npy'
+    return_tooth_idmap: True
+    tooth_idmaps_path: './data/tooth_priors/tooth_idmaps_train_u8.npy'
+    transforms:
+      ops:
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: SanitizeLesionBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeLesionBoxes, min_size: 1}
+        - {type: ConvertBox, out_fmt: 'cxcywh', normalize: True}
+        - {type: ToImage}
+        - {type: ConvertImageDtype}
+
+val_dataloader:
+  dataset:
+    img_folder: ./dataset/OralXrays9/images/val
+    ann_file: ./dataset/OralXrays9/annotations/instances_val.json
+    return_tooth_mask: True
+    tooth_masks_path: './data/tooth_priors/tooth_masks_val.npy'
+    # Predicted tooth instance IDs are required for within-tooth edge weighting.
+    return_tooth_idmap: True
+    tooth_idmaps_path: './data/tooth_priors/tooth_idmaps_val_u8.npy'
+    return_tooth_boxes_t: True
+    tooth_boxes_path: './data/tooth_priors/tooth_boxes_val.npy'
+    transforms:
+      ops:
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeLesionBoxes, min_size: 1}
+        - {type: ToImage}
+        - {type: ConvertImageDtype}
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      params: '^(?=.*backbone)(?=.*norm).*$'
+      lr: 0.00001
+      weight_decay: 0.
+    -
+      params: '^(?=.*backbone)(?!.*norm).*$'
+      lr: 0.00001
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bias)).*$'
+      weight_decay: 0.
+  lr: 0.0001
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+lr_scheduler:
+  type: CosineAnnealingLR
+  T_max: 150
+  eta_min: 0.000001
+
+epoches: 150
+patience: 30

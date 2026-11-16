@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+/dataset/
+/data/tooth_priors/
+/output/
+/outputs/
+*.pth
+*.pt
+!tools/tooth_segmenter_yolov8n_seg.pt
